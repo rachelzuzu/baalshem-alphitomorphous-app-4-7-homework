@@ -1,21 +1,105 @@
-var express = require('express');
-var bodyParser = require('body-parser');
-var pg = require("pg");
-var methodOverride=require("method-override");
+var express = require('express'),
+	bodyParser = require('body-parser'),
+	ejs=require('ejs'),
+	methodOverride=require("method-override"),
+	pg = require("pg"),
+	db = require("./models"),
+	session = require("express-session"),
+	app = express();
 
-var app = express();
 
 app.set('view engine', 'ejs');
-app.use(bodyParser.urlencoded({extended: true}));
-
 
 app.use(methodOverride('_method'));
-// Refactor connection and query code
 
-var db = require("./models");
+app.use(bodyParser.urlencoded({extended: true}));
 
-// Fill in these article routes!
+//create a session
+app.use(session({
+  secret: 'super secret',
+  resave: false,
+  saveUninitialized: true
+}));
 
+
+//save user data for a session
+app.use("/", function (req, res, next) {
+
+  req.login = function (user) {
+    req.session.userId = user.id;
+  };
+
+  req.currentUser = function () {
+    return db.User.
+      find({
+        where: {
+          id: req.session.userId
+       }
+      }).
+      then(function (user) {
+        req.user = user;
+        return user;
+      })
+  };
+
+  req.logout = function () {
+    req.session.userId = null;
+    req.user = null;
+  }
+
+  next(); 
+});
+
+//create a route to sign up**
+app.get("/signup", function (req, res) {
+  res.render("signup");
+});
+
+// where the user submits the sign-up form
+app.post("/users", function (req, res) {
+
+  // grab the user from the params
+  var user = req.body.user;
+
+  // create the new user
+  db.User.
+ 	 // create user
+    createSecure(user.email, user.password).
+    // if user created successfully, then login user
+    then(function (user) {
+	    req.login(user);
+	    res.redirect("/profile");
+    });
+});
+
+//add a login path
+app.get("/login", function (req, res) {
+  res.render("login");
+});
+
+//login
+app.post("/login", function (req, res) {
+  var user = req.body.user;
+
+  db.User
+    .authenticate(user.email, user.password)
+    .then(function (user) {
+          req.login(user);
+          res.redirect("/profile");
+    });
+});
+
+//user show path
+app.get("/profile", function (req, res) {
+  req.currentUser()
+      .then(function (user) {
+        res.render("profile.ejs", {user:user});
+      })
+});
+
+
+
+// Fill in these ARTICLE routes!
 
 //add get to show all articles
 app.get('/articles', function(req,res) {
@@ -56,9 +140,25 @@ app.get('/articles/:id', function(req, res) {
   	db.Article.find({ where: { id: req.params.id }, include: db.Author })
 //get id and find the author in the Author db
   		.then(function(dbArticle) {
-  			res.render('articles/article', {articleToDisplay:dbArticle});
+  			res.render('articles/article', {articleToDisplay: dbArticle});
   		});
 });
+
+
+// app.get('/articles/:id', function(req, res) {
+//   	var articleId=req.params.id;
+//   	db.Article.find({ where: { id: req.params.id }})
+//   	.then(function (article) {
+//   		return article.getAuthor().
+//   			then(function (author) {
+//   				article.Author = author;
+//   				return article;
+//   			});
+//   	})
+// 	.then(function(dbArticle) {
+// 		res.render('articles/article', {articleToDisplay: dbArticle});
+// 	});
+// });
 
 //add option to edit
 app.get('/articles/:id/edit', function(req,res) {
@@ -134,18 +234,29 @@ app.get('/sync', function(req, res) {
 	});
 });
 
+//add post/users
+
+// where the user submits the sign-up form
+app.post("/users", function (req, res) {
+
+  // grab the user from the params
+  var user = req.body.user;
+
+  // create the new user
+  db.User.
+    createSecure(user.email, user.password).
+    then(function(){
+        res.send("SIGNED UP!");
+      });
+});
+
+
+
+
+
 app.listen(3000, function() {
 	var msg = "* Listening on Port 3000 *";
 
-	// Just for fun... what's going on in this code?
-	/*
-	 * When the server starts listening, it displays:
-	 *
-	 * 	**************************
-	 *	* Listening on Port 3000 *
-	 *	**************************
-	 *
-	*/
 	console.log(Array(msg.length + 1).join("*"));
 	console.log(msg);
 	console.log(Array(msg.length + 1).join("*"));
